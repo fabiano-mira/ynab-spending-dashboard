@@ -8,9 +8,6 @@ The active app lives entirely in [`report-app/`](./report-app) and is run via
 [`docker-compose.yml`](./docker-compose.yml). It talks directly to the YNAB API using a
 [Personal Access Token](https://api.ynab.com/#personal-access-tokens) (not OAuth), so it's meant to
 run on a trusted host/network you control — it is **not** deployed publicly.
-> **Note:** `src/`, `public/`, `webpack.config.js`, and `bin/` are leftover scaffolding from the
-> original [YNAB API Starter Kit](https://github.com/ynab/ynab-api-starter-kit) template this repo
-> was created from. They are unused by the real app and kept only for reference.
 ## Features
 - **Dashboard** (`/`) — spending report over a configurable window (default 30 days): total spent,
   average per day, spend broken into rule-based buckets (Housing & Utilities, Subscriptions &
@@ -71,6 +68,4 @@ Drop `--dry-run` to actually write category changes back to YNAB.
 - This app is not designed to be deployed as a public static site or behind a public reverse proxy
   without adding its own authentication — `server.cjs` has none.
 ## License
-The original starter-kit scaffolding (`src/`, `public/`, `bin/`) remains under the Apache-2.0
-license from [YNAB's starter kit](https://github.com/ynab/ynab-api-starter-kit) — see
-[`LICENSE.md`](./LICENSE.md). `report-app/` is custom code written for this personal project.
+See [`LICENSE.md`](./LICENSE.md) (Apache-2.0).
