@@ -1,0 +1,9 @@
+services:
+  ynab-report:
+    build: ./report-app
+    container_name: ynab-report
+    ports:
+      - "3333:3000"
+    env_file:
+      - .env # provides YNAB_ACCESS_TOKEN
+    restart: unless-stopped

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>YNAB Advisor</title>
+<style>
+  :root {
+    --accent: #4f6df5; --accent-soft: #eef1ff;
+    --bg: #f3f4f8; --card: #fff; --text: #1c2130; --muted: #8a90a3;
+    --green: #1fa971; --amber: #e0a52e; --red: #e05252;
+    --radius: 14px; --shadow: 0 1px 3px rgba(20,24,40,.07), 0 8px 24px rgba(20,24,40,.05);
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  .topbar { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.9); backdrop-filter: blur(8px); border-bottom: 1px solid #e8eaf1; display: flex; align-items: center; gap: 20px; padding: 12px 28px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 17px; margin: 0; }
+  .nav { display: flex; gap: 8px; }
+  .nav a { text-decoration: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; }
+  .nav a.active, .nav a:hover { background: var(--accent-soft); color: var(--accent); }
+  .spacer { flex: 1; }
+  select, input[type=number], button { padding: 8px 12px; font-size: 13px; border-radius: 9px; border: 1px solid #dde0ea; background: #fff; color: var(--text); }
+  input[type=number] { width: 70px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; font-weight: 600; }
+  .page { padding: 20px 28px 60px; max-width: 900px; margin: 0 auto; }
+  .intro { color: var(--muted); font-size: 13.5px; margin: 6px 0 20px; }
+
+  .advisory { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; margin-bottom: 14px; border-left: 5px solid var(--accent); }
+  .advisory.high { border-left-color: var(--red); }
+  .advisory.medium { border-left-color: var(--amber); }
+  .advisory.low { border-left-color: var(--green); }
+  .advisory .head { display: flex; align-items: center; gap: 10px; }
+  .advisory h3 { margin: 0; font-size: 15.5px; flex: 1; }
+  .sev { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; padding: 3px 9px; border-radius: 999px; }
+  .sev.high { background: #fdeaea; color: var(--red); }
+  .sev.medium { background: #faf3e0; color: #a87b12; }
+  .sev.low { background: #e6f7ef; color: var(--green); }
+  .advisory p { margin: 10px 0; font-size: 13.5px; line-height: 1.55; color: #3a4055; }
+  .advisory ul { margin: 8px 0; padding-left: 20px; font-size: 13px; color: #3a4055; }
+  .advisory .action { font-size: 13px; background: #f7f8fc; border-radius: 9px; padding: 10px 13px; margin: 10px 0; }
+  .advisory .action b { color: var(--accent); }
+  .btnrow { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .cal-btn { background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .cal-btn:hover { opacity: .92; }
+  .cal-btn.alt { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+  .muted { color: var(--muted); padding: 20px 28px; font-size: 13px; }
+  .error { color: var(--red); padding: 10px 28px; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .subs-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0; }
+  .subs-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid #eef0f5; }
+  .subs-table td { padding: 7px 8px; border-bottom: 1px solid #f4f5f9; }
+  .subs-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .mini-btn { background: var(--accent-soft); color: var(--accent); border: none; border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .mini-btn:hover { background: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🧭 Financial Advisor</h1>
+  <div class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/charts">Charts &amp; Flow</a>
+    <a class="active" href="/advisor">Advisor</a>
+    <a href="/raw">Raw Data</a>
+  </div>
+  <div class="spacer"></div>
+  <label>Plan <select id="plan"></select></label>
+  <label>Last <input type="number" id="days" value="30" min="1" max="730"> days</label>
+  <button class="primary" id="refresh">Apply</button>
+</div>
+
+<div id="error" class="error" hidden></div>
+<div id="loading" class="muted" hidden>Analyzing your spending…</div>
+
+<div class="page" id="page" hidden>
+  <div class="intro">Advisories are generated from your actual transactions for the selected period. Add any of them to your calendar so you don't forget — the button downloads an <b>.ics</b> file that opens in Apple/Google/Outlook Calendar (recurring where it makes sense).</div>
+
+  <div class="advisory low" id="subsCard" hidden>
+    <div class="head"><span style="font-size:20px">📅</span><h3>Subscription payment reminders</h3><span class="sev low">reminders</span></div>
+    <p>Each subscription detected from your transactions, with its billing day (inferred from the most recent charge). Reminders repeat monthly on that day, with an alert the day before at 9 AM.</p>
+    <table class="subs-table" id="subsTable">
+      <thead><tr><th>Subscription</th><th>Amount</th><th>Pays on day</th><th>Next payment</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="btnrow"><button class="cal-btn" id="allSubsBtn">📅 Add ALL subscriptions to Calendar</button></div>
+  </div>
+
+  <div id="advisories"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currency = 'USD';
+const fmt = (n) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + currency;
+
+// ---------- ICS calendar generation ----------
+function pad(n) { return String(n).padStart(2, '0'); }
+function icsDate(d) {
+  return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
+}
+function nextWeekday(weekday, hour) { // weekday: 1=Mon..7=Sun
+  const d = new Date();
+  d.setHours(hour, 0, 0, 0);
+  const cur = d.getDay() === 0 ? 7 : d.getDay();
+  let diff = weekday - cur;
+  if (diff <= 0) diff += 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+function firstOfNextMonth(hour) {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1, 1);
+  d.setHours(hour, 0, 0, 0);
+  return d;
+}
+function escapeIcs(s) { return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
+
+function veventLines(title, description, start, rrule, alarmTrigger) {
+  const end = new Date(start.getTime() + 30 * 60000);
+  const uid = 'ynab-advisor-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '@localhost';
+  const lines = [
+    'BEGIN:VEVENT',
+    'UID:' + uid,
+    'DTSTAMP:' + icsDate(new Date()) + 'Z',
+    'DTSTART:' + icsDate(start),
+    'DTEND:' + icsDate(end),
+    'SUMMARY:' + escapeIcs(title),
+    'DESCRIPTION:' + escapeIcs(description),
+  ];
+  if (rrule) lines.push('RRULE:' + rrule);
+  lines.push('BEGIN:VALARM', 'TRIGGER:' + (alarmTrigger || '-PT15M'), 'ACTION:DISPLAY', 'DESCRIPTION:' + escapeIcs(title), 'END:VALARM');
+  lines.push('END:VEVENT');
+  return lines;
+}
+
+function downloadIcsEvents(filename, events) {
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//YNAB Advisor//EN', 'CALSCALE:GREGORIAN'];
+  for (const ev of events) lines.push(...veventLines(ev.title, ev.desc, ev.start, ev.rrule, ev.alarm));
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadIcs(title, description, start, rrule) {
+  downloadIcsEvents(title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '.ics',
+    [{ title, desc: description, start, rrule }]);
+}
+
+// ---------- Subscription payment reminders ----------
+const STREAMING = /netflix|disney|prime video|hulu|hbo|spotify|hinge/i;
+
+function detectSubscriptions(txns) {
+  const byPayee = {};
+  for (const t of txns) {
+    if (t.bucket === 'Subscriptions & Software' || STREAMING.test(t.payee)) {
+      (byPayee[t.payee] = byPayee[t.payee] || []).push(t);
+    }
+  }
+  const subs = [];
+  for (const [payee, list] of Object.entries(byPayee)) {
+    list.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
+    const last = list[0];
+    const payDay = parseInt(last.date.slice(8, 10), 10);
+    // next payment date: this month or next, on payDay (clamped to 28 to be safe in ICS monthly rules)
+    const day = Math.min(payDay, 28);
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth(), day, 9, 0, 0);
+    if (next <= now) next.setMonth(next.getMonth() + 1);
+    subs.push({ payee, amount: last.amount, payDay: day, next, count: list.length });
+  }
+  return subs.sort((a, b) => b.amount - a.amount);
+}
+
+function subEvent(s) {
+  return {
+    title: `💳 ${s.payee} — ${fmt(s.amount)} due`,
+    desc: `Subscription payment: ${s.payee}, ~${fmt(s.amount)} expected on day ${s.payDay} of each month.\nCancel or review if unused.\n\nFrom YNAB Advisor.`,
+    start: s.next,
+    rrule: `FREQ=MONTHLY;BYMONTHDAY=${s.payDay}`,
+    alarm: '-P1D', // alert 1 day before
+  };
+}
+
+function renderSubscriptions(r) {
+  const subs = detectSubscriptions(r.transactions);
+  const card = $('subsCard');
+  if (!subs.length) { card.hidden = true; return; }
+  card.hidden = false;
+  const tbody = $('subsTable').querySelector('tbody');
+  tbody.innerHTML = '';
+  for (const s of subs) {
+    const tr = document.createElement('tr');
+    const nextStr = s.next.toISOString().slice(0, 10);
+    tr.innerHTML = `<td>${s.payee.length > 34 ? s.payee.slice(0, 34) + '…' : s.payee}</td>` +
+      `<td class="r">${fmt(s.amount)}</td>` +
+      `<td class="r">${s.payDay}</td>` +
+      `<td class="r">${nextStr}</td><td class="r"></td>`;
+    const btn = document.createElement('button');
+    btn.className = 'mini-btn';
+    btn.textContent = '📅 Remind me';
+    btn.onclick = () => downloadIcsEvents(
+      s.payee.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) + '-payment.ics', [subEvent(s)]);
+    tr.lastElementChild.appendChild(btn);
+    tbody.appendChild(tr);
+  }
+  $('allSubsBtn').onclick = () => downloadIcsEvents('all-subscription-payments.ics', subs.map(subEvent));
+}
+
+// ---------- Advisory rules ----------
+function buildAdvisories(r, days) {
+  const txns = r.transactions;
+  const totalSpent = txns.reduce((s, t) => s + t.amount, 0);
+  const byBucket = {};
+  const byPayee = {};
+  const payeeCount = {};
+  for (const t of txns) {
+    byBucket[t.bucket] = (byBucket[t.bucket] || 0) + t.amount;
+    byPayee[t.payee] = (byPayee[t.payee] || 0) + t.amount;
+    payeeCount[t.payee] = (payeeCount[t.payee] || 0) + 1;
+  }
+  const advisories = [];
+
+  // 1. Cash flow
+  const net = r.totalInflow - totalSpent;
+  if (net < 0) {
+    advisories.push({
+      sev: 'high', icon: '🚨', title: 'You spent more than you brought in',
+      body: `Outflow ${fmt(totalSpent)} vs inflow ${fmt(r.totalInflow)} → net <b>${fmt(net)}</b> over the last ${days} days. This is being covered by balances or debt.`,
+      action: 'Do a weekly money check-in: review the dashboard, spot what pushed you over, and decide one cut for next week.',
+      cal: { title: 'Weekly money check-in', desc: 'Review YNAB dashboard (http://localhost:3000). Compare spend vs income; pick one cut for next week.', start: () => nextWeekday(1, 9), rrule: 'FREQ=WEEKLY;BYDAY=MO' },
+    });
+  } else {
+    advisories.push({
+      sev: 'low', icon: '✅', title: 'Positive cash flow — lock it in',
+      body: `You kept <b>${fmt(net)}</b> after spending over the last ${days} days. Move it somewhere intentional before it evaporates.`,
+      action: 'Schedule a monthly "pay yourself first" transfer to savings/investments right after payday.',
+      cal: { title: 'Transfer savings (pay yourself first)', desc: 'Move surplus to savings/investment account. Amount from advisor: ' + fmt(net), start: () => firstOfNextMonth(9), rrule: 'FREQ=MONTHLY;BYMONTHDAY=1' },
+    });
+  }
+
+  // 2. Large one-offs
+  const large = txns.filter((t) => t.bucket === 'Large One-Offs');
+  if (large.length) {
+    const sum = large.reduce((s, t) => s + t.amount, 0);
+    advisories.push({
+      sev: 'high', icon: '💥', title: 'Large one-off expenses need a plan',
+      body: `${large.length} transaction(s) ≥ $1,000 totalling <b>${fmt(sum)}</b>: ` + large.map((t) => `${t.payee.slice(0, 30)} (${fmt(t.amount)})`).join(', ') + '. One-offs like these are what break budgets when they surprise you.',
+      action: `Build a sinking fund: set aside ~<b>${fmt(Math.ceil(sum / 3))}</b>/month so the next big expense is already funded.`,
+      cal: { title: 'Fund the big-expense sinking fund', desc: 'Transfer monthly amount into sinking fund for large expenses (legal, repairs, etc.).', start: () => firstOfNextMonth(9), rrule: 'FREQ=MONTHLY;BYMONTHDAY=1' },
+    });
+  }
+
+  // 3. Subscriptions audit
+  const subs = txns.filter((t) => t.bucket === 'Subscriptions & Software');
+  if (subs.length) {
+    const sum = subs.reduce((s, t) => s + t.amount, 0);
+    const subPayees = {};
+    for (const t of subs) subPayees[t.payee] = (subPayees[t.payee] || 0) + t.amount;
+    const listed = Object.entries(subPayees).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([p, v]) => `${p.slice(0, 26)} (${fmt(v)})`).join(', ');
+    const monthly = (sum / days) * 30;
+    advisories.push({
+      sev: monthly > 200 ? 'medium' : 'low', icon: '🔁', title: `Subscriptions: ~${fmt(monthly)}/month`,
+      body: `You paid <b>${fmt(sum)}</b> to ${Object.keys(subPayees).length} subscription/software payees in ${days} days: ${listed}.`,
+      action: 'Run a monthly subscription audit: cancel anything you did not use in the last 30 days.',
+      cal: { title: 'Subscription audit — cancel unused', desc: 'Review subscriptions in the YNAB dashboard (bucket: Subscriptions & Software). Cancel anything unused.', start: () => firstOfNextMonth(19), rrule: 'FREQ=MONTHLY;BYMONTHDAY=1' },
+    });
+  }
+
+  // 4. Food delivery
+  const delivery = txns.filter((t) => /doordash|uber eats|grubhub/i.test(t.payee));
+  if (delivery.length >= 3) {
+    const sum = delivery.reduce((s, t) => s + t.amount, 0);
+    advisories.push({
+      sev: 'medium', icon: '🍔', title: `Food delivery: ${delivery.length} orders, ${fmt(sum)}`,
+      body: `Delivery averages <b>${fmt(sum / delivery.length)}</b> per order. Cooking or pickup for half of these would save roughly ${fmt(sum / 2)} per ${days} days.`,
+      action: 'Set a weekly delivery cap and do one meal-prep session per week.',
+      cal: { title: 'Meal prep (cut delivery orders)', desc: 'Prep meals for the week to reduce DoorDash orders. Target: max 1 delivery this week.', start: () => nextWeekday(7, 17), rrule: 'FREQ=WEEKLY;BYDAY=SU' },
+    });
+  }
+
+  // 5. Uncategorized transactions
+  const uncat = txns.filter((t) => t.category === 'Uncategorized');
+  if (uncat.length > txns.length * 0.5) {
+    advisories.push({
+      sev: 'medium', icon: '🏷️', title: `${uncat.length} of ${txns.length} transactions are uncategorized`,
+      body: 'Your YNAB categories are mostly empty, so budget reports (and this advisor) rely on payee guessing. 10 minutes of categorizing pays off in much better insight.',
+      action: 'Categorize new transactions in YNAB once a week.',
+      cal: { title: 'Categorize YNAB transactions', desc: 'Open YNAB and categorize the week\'s transactions (10 min).', start: () => nextWeekday(5, 18), rrule: 'FREQ=WEEKLY;BYDAY=FR' },
+    });
+  }
+
+  // 6. Weekly everyday budget suggestion
+  const everyday = totalSpent - (byBucket['Large One-Offs'] || 0);
+  const weeklyBudget = Math.ceil(((everyday / days) * 7) / 10) * 10;
+  advisories.push({
+    sev: 'low', icon: '🎯', title: `Suggested everyday budget: ${fmt(weeklyBudget)}/week`,
+    body: `Your everyday spending (excluding one-offs) is <b>${fmt(everyday / days)}</b>/day. A weekly cap of <b>${fmt(weeklyBudget)}</b> matches your current pattern — hold it, then ratchet it down 10% next month.`,
+    action: 'Check weekly spend vs the cap every Sunday evening.',
+    cal: { title: 'Weekly budget check vs cap ' + fmt(weeklyBudget), desc: 'Compare this week\'s spend on the dashboard vs the weekly cap. Adjust next week.', start: () => nextWeekday(7, 20), rrule: 'FREQ=WEEKLY;BYDAY=SU' },
+  });
+
+  // 7. Crypto/discretionary big buys
+  const crypto = txns.filter((t) => /moonpay|coinbase/i.test(t.payee));
+  if (crypto.length) {
+    const sum = crypto.reduce((s, t) => s + t.amount, 0);
+    advisories.push({
+      sev: 'medium', icon: '🪙', title: `Crypto purchases: ${fmt(sum)}`,
+      body: 'Volatile purchases while cash flow is tight increases risk. Only allocate what you can afford to lose.',
+      action: 'If intentional: automate a small fixed monthly buy instead of ad-hoc purchases.',
+      cal: { title: 'Review crypto allocation', desc: 'Check crypto spend vs plan; convert ad-hoc buys into a fixed monthly amount.', start: () => firstOfNextMonth(19), rrule: 'FREQ=MONTHLY;BYMONTHDAY=1' },
+    });
+  }
+
+  return advisories;
+}
+
+function render(r, days) {
+  currency = r.currency || 'USD';
+  renderSubscriptions(r);
+  const div = $('advisories');
+  div.innerHTML = '';
+  for (const a of buildAdvisories(r, days)) {
+    const card = document.createElement('div');
+    card.className = 'advisory ' + a.sev;
+    card.innerHTML = `
+      <div class="head"><span style="font-size:20px">${a.icon}</span><h3>${a.title}</h3><span class="sev ${a.sev}">${a.sev}</span></div>
+      <p>${a.body}</p>
+      <div class="action"><b>Do this:</b> ${a.action}</div>
+      <div class="btnrow"></div>`;
+    const btn = document.createElement('button');
+    btn.className = 'cal-btn';
+    btn.textContent = '📅 Add to Calendar';
+    btn.onclick = () => downloadIcs(a.cal.title, a.cal.desc + '\n\nFrom YNAB Advisor.', a.cal.start(), a.cal.rrule);
+    card.querySelector('.btnrow').appendChild(btn);
+    div.appendChild(card);
+  }
+}
+
+async function loadPlans() {
+  const res = await fetch('/api/plans');
+  if (!res.ok) throw new Error('Failed to load plans');
+  const plans = await res.json();
+  const sel = $('plan'); sel.innerHTML = '';
+  for (const p of plans) {
+    const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.appendChild(o);
+  }
+}
+
+async function load() {
+  $('error').hidden = true; $('loading').hidden = false; $('page').hidden = true;
+  try {
+    const days = parseInt($('days').value, 10) || 30;
+    const res = await fetch(`/api/report?plan_id=${encodeURIComponent($('plan').value)}&days=${days}`);
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to load report');
+    render(await res.json(), days);
+    $('page').hidden = false;
+  } catch (e) {
+    $('error').textContent = e.message; $('error').hidden = false;
+  } finally { $('loading').hidden = true; }
+}
+
+$('refresh').onclick = load;
+$('plan').onchange = load;
+
+(async () => {
+  try { await loadPlans(); await load(); }
+  catch (e) { $('error').textContent = e.message; $('error').hidden = false; }
+})();
+</script>
+</body>
+</html>

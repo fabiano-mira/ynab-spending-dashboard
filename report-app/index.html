@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>YNAB Spending Dashboard</title>
+<style>
+  :root {
+    --accent: #4f6df5; --accent-soft: #eef1ff;
+    --bg: #f3f4f8; --card: #fff; --text: #1c2130; --muted: #8a90a3;
+    --green: #1fa971; --red: #e05252;
+    --radius: 14px; --shadow: 0 1px 3px rgba(20,24,40,.07), 0 8px 24px rgba(20,24,40,.05);
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+
+  .topbar { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.9); backdrop-filter: blur(8px); border-bottom: 1px solid #e8eaf1; display: flex; align-items: center; gap: 20px; padding: 12px 28px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 17px; margin: 0; }
+  .topbar .nav { display: flex; gap: 8px; }
+  .nav a { text-decoration: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; }
+  .nav a.active, .nav a:hover { background: var(--accent-soft); color: var(--accent); }
+  .topbar .spacer { flex: 1; }
+  select, input[type=number], input[type=search], button {
+    padding: 8px 12px; font-size: 13px; border-radius: 9px; border: 1px solid #dde0ea; background: #fff; color: var(--text); outline: none;
+  }
+  input[type=number] { width: 70px; }
+  input[type=search] { width: 180px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; font-weight: 600; }
+  button.primary:hover { opacity: .92; }
+
+  .page { padding: 20px 28px 60px; max-width: 1300px; margin: 0 auto; }
+  .section-title { font-size: 12px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); margin: 26px 0 10px; }
+
+  /* slicers */
+  .slicers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip { padding: 6px 13px; border-radius: 999px; border: 1px solid #dde0ea; background: #fff; font-size: 12.5px; cursor: pointer; user-select: none; color: var(--muted); font-weight: 600; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip .amt { font-weight: 400; opacity: .8; margin-left: 4px; }
+
+  /* KPI cards */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .kpi { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
+  .kpi .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .kpi.green .value { color: var(--green); }
+  .kpi.red .value { color: var(--red); }
+
+  /* cards grid */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .card h2 { font-size: 14px; margin: 0; padding: 14px 18px; border-bottom: 1px solid #f0f1f6; display: flex; justify-content: space-between; }
+  .card h2 .hint { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .span4 { grid-column: span 4; } .span6 { grid-column: span 6; } .span8 { grid-column: span 8; } .span12 { grid-column: span 12; }
+  @media (max-width: 1000px) { .span4, .span6, .span8 { grid-column: span 12; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 18px; border-bottom: 1px solid #f4f5f9; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr:hover td { background: #fafbff; }
+  .scroll { max-height: 380px; overflow-y: auto; }
+
+  .barcell { position: relative; }
+  .bar { position: absolute; left: 0; top: 15%; height: 70%; background: var(--accent-soft); border-radius: 4px; z-index: 0; }
+  .barlabel { position: relative; z-index: 1; }
+
+  tr.bucket-row td { background: #f6f8ff; font-weight: 700; }
+  td.indent { padding-left: 34px; color: #5a6072; }
+  .pct { color: var(--muted); font-weight: 500; font-size: 11.5px; margin-left: 6px; }
+  .muted { color: var(--muted); padding: 14px 18px; font-size: 13px; }
+  .error { color: var(--red); padding: 10px 28px; font-weight: 600; }
+  .badge { font-size: 11px; background: var(--accent-soft); color: var(--accent); border-radius: 6px; padding: 2px 8px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>💸 Spending Dashboard</h1>
+  <div class="nav">
+    <a class="active" href="/">Dashboard</a>
+    <a href="/charts">Charts &amp; Flow</a>
+    <a href="/advisor">Advisor</a>
+    <a href="/raw">Raw Data</a>
+  </div>
+  <div class="spacer"></div>
+  <label>Plan <select id="plan"></select></label>
+  <label>Last <input type="number" id="days" value="30" min="1" max="730"> days</label>
+  <button class="primary" id="refresh">Apply</button>
+</div>
+
+<div id="error" class="error" hidden></div>
+<div id="loading" class="muted" style="padding:20px 28px" hidden>Loading…</div>
+
+<div class="page" id="page" hidden>
+
+  <div class="section-title">Filters — click to slice</div>
+  <div class="slicers" id="bucketSlicers"></div>
+  <div style="height:8px"></div>
+  <div class="slicers">
+    <span id="accountSlicers" class="slicers"></span>
+    <input type="search" id="payeeSearch" placeholder="Search payee…">
+    <span class="chip" id="resetFilters">✕ Reset</span>
+  </div>
+
+  <div class="section-title">Overview</div>
+  <div class="kpis">
+    <div class="kpi red"><div class="label">Total spent</div><div class="value" id="kTotal"></div><div class="sub" id="kSince"></div></div>
+    <div class="kpi"><div class="label">Everyday spent</div><div class="value" id="kEveryday"></div><div class="sub">excludes one-offs ≥ $1k</div></div>
+    <div class="kpi"><div class="label">Avg / day</div><div class="value" id="kAvg"></div><div class="sub" id="kAvgSub"></div></div>
+    <div class="kpi"><div class="label">Median day</div><div class="value" id="kMedian"></div><div class="sub">of days with spending</div></div>
+    <div class="kpi green"><div class="label">Inflow</div><div class="value" id="kInflow"></div><div class="sub" id="kNet"></div></div>
+    <div class="kpi"><div class="label">Transactions</div><div class="value" id="kCount"></div><div class="sub" id="kBiggest"></div></div>
+  </div>
+
+  <div class="section-title">Time</div>
+  <div class="grid">
+    <div class="card span6">
+      <h2>Weekly spent <span class="hint">week starting Monday</span></h2>
+      <div class="scroll"><table id="weeklyTable">
+        <thead><tr><th>Week of</th><th class="amount">Spent</th></tr></thead><tbody></tbody>
+      </table></div>
+    </div>
+    <div class="card span6">
+      <h2>Daily spent <span class="hint">bar = share of busiest day</span></h2>
+      <div class="scroll"><table id="dailyTable">
+        <thead><tr><th>Date</th><th class="amount">Spent</th></tr></thead><tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="section-title">Where it goes</div>
+  <div class="grid">
+    <div class="card span8">
+      <h2>Buckets <span class="hint">payees grouped, % of filtered total</span></h2>
+      <div class="scroll"><table id="bucketTable">
+        <thead><tr><th>Bucket / Payee</th><th class="amount">Spent</th></tr></thead><tbody></tbody>
+      </table></div>
+    </div>
+    <div class="card span4">
+      <h2>Top payees</h2>
+      <div class="scroll"><table id="payeeTable">
+        <thead><tr><th>Payee</th><th class="amount">Spent</th></tr></thead><tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="section-title">Details</div>
+  <div class="grid">
+    <div class="card span12">
+      <h2>Transactions <span class="hint" id="txnCount"></span></h2>
+      <div class="scroll"><table id="txnTable">
+        <thead><tr><th>Date</th><th>Payee</th><th>Bucket</th><th>Account</th><th class="amount">Amount</th></tr></thead><tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currency = '', report = null;
+let selBuckets = new Set(), selAccounts = new Set(), payeeQuery = '';
+
+const fmt = (n) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (currency ? ' ' + currency : '');
+
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() - (day === 0 ? 6 : day - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+function filteredTxns() {
+  return report.transactions.filter((t) =>
+    (selBuckets.size === 0 || selBuckets.has(t.bucket)) &&
+    (selAccounts.size === 0 || selAccounts.has(t.account)) &&
+    (!payeeQuery || t.payee.toLowerCase().includes(payeeQuery))
+  );
+}
+
+function renderSlicers() {
+  const bDiv = $('bucketSlicers'); bDiv.innerHTML = '';
+  const bTotals = {};
+  for (const t of report.transactions) bTotals[t.bucket] = (bTotals[t.bucket] || 0) + t.amount;
+  for (const [b, amt] of Object.entries(bTotals).sort((a, z) => z[1] - a[1])) {
+    const c = document.createElement('span');
+    c.className = 'chip' + (selBuckets.has(b) ? ' on' : '');
+    c.innerHTML = b + '<span class="amt">' + Math.round(amt).toLocaleString() + '</span>';
+    c.onclick = () => { selBuckets.has(b) ? selBuckets.delete(b) : selBuckets.add(b); renderAll(); };
+    bDiv.appendChild(c);
+  }
+  const aDiv = $('accountSlicers'); aDiv.innerHTML = '';
+  const accounts = [...new Set(report.transactions.map((t) => t.account))].filter(Boolean).sort();
+  for (const a of accounts) {
+    const c = document.createElement('span');
+    c.className = 'chip' + (selAccounts.has(a) ? ' on' : '');
+    c.textContent = a.length > 28 ? a.slice(0, 28) + '…' : a;
+    c.title = a;
+    c.onclick = () => { selAccounts.has(a) ? selAccounts.delete(a) : selAccounts.add(a); renderAll(); };
+    aDiv.appendChild(c);
+  }
+}
+
+function renderAll() {
+  renderSlicers();
+  const txns = filteredTxns();
+  const days = parseInt($('days').value, 10) || 30;
+
+  const total = txns.reduce((s, t) => s + t.amount, 0);
+  const large = txns.filter((t) => t.bucket === 'Large One-Offs').reduce((s, t) => s + t.amount, 0);
+  const everyday = total - large;
+
+  const daily = {}, weekly = {}, byPayee = {}, byBucket = {}, bucketPayees = {};
+  for (const t of txns) {
+    daily[t.date] = (daily[t.date] || 0) + t.amount;
+    const wk = mondayOf(t.date);
+    weekly[wk] = (weekly[wk] || 0) + t.amount;
+    byPayee[t.payee] = (byPayee[t.payee] || 0) + t.amount;
+    byBucket[t.bucket] = (byBucket[t.bucket] || 0) + t.amount;
+    (bucketPayees[t.bucket] = bucketPayees[t.bucket] || {})[t.payee] =
+      (bucketPayees[t.bucket]?.[t.payee] || 0) + t.amount;
+  }
+
+  const dayVals = Object.values(daily).sort((a, b) => a - b);
+  const median = dayVals.length ? dayVals[Math.floor(dayVals.length / 2)] : 0;
+  const biggest = txns.reduce((m, t) => (t.amount > m.amount ? t : m), { amount: 0, payee: '—' });
+
+  $('kTotal').textContent = fmt(total);
+  $('kSince').textContent = 'since ' + report.sinceDate;
+  $('kEveryday').textContent = fmt(everyday);
+  $('kAvg').textContent = fmt(total / days);
+  $('kAvgSub').textContent = 'everyday: ' + fmt(everyday / days);
+  $('kMedian').textContent = fmt(median);
+  $('kInflow').textContent = fmt(report.totalInflow);
+  $('kNet').textContent = 'net: ' + fmt(report.totalInflow - total);
+  $('kCount').textContent = txns.length;
+  $('kBiggest').textContent = 'biggest: ' + fmt(biggest.amount) + ' ' + biggest.payee.slice(0, 22);
+
+  const dateRows = (obj) => Object.entries(obj).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  const descRows = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]);
+
+  fillBars('weeklyTable', dateRows(weekly));
+  fillBars('dailyTable', dateRows(daily));
+  fillPayees(descRows(byPayee).slice(0, 20));
+  fillBuckets(descRows(byBucket), bucketPayees, total);
+  fillTxns(txns.slice(0, 200));
+  $('txnCount').textContent = txns.length + ' shown' + (txns.length > 200 ? ' (first 200)' : '');
+}
+
+function fillBars(tableId, rows) {
+  const tbody = $(tableId).querySelector('tbody'); tbody.innerHTML = '';
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="2" class="muted">No data</td></tr>'; return; }
+  const max = Math.max(...rows.map((r) => r[1]));
+  for (const [k, v] of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="barcell"><div class="bar" style="width:${(v / max) * 100}%"></div><span class="barlabel">${k}</span></td><td class="amount">${fmt(v)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function fillPayees(rows) {
+  const tbody = $('payeeTable').querySelector('tbody'); tbody.innerHTML = '';
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="2" class="muted">No data</td></tr>'; return; }
+  for (const [k, v] of rows) {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td'); td1.textContent = k.length > 34 ? k.slice(0, 34) + '…' : k; td1.title = k;
+    const td2 = document.createElement('td'); td2.className = 'amount'; td2.textContent = fmt(v);
+    tr.append(td1, td2); tbody.appendChild(tr);
+  }
+}
+
+function fillBuckets(rows, bucketPayees, total) {
+  const tbody = $('bucketTable').querySelector('tbody'); tbody.innerHTML = '';
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="2" class="muted">No data</td></tr>'; return; }
+  for (const [b, v] of rows) {
+    const tr = document.createElement('tr'); tr.className = 'bucket-row';
+    const pct = total > 0 ? Math.round((v / total) * 100) : 0;
+    const td1 = document.createElement('td'); td1.textContent = b;
+    const sp = document.createElement('span'); sp.className = 'pct'; sp.textContent = pct + '%'; td1.appendChild(sp);
+    const td2 = document.createElement('td'); td2.className = 'amount'; td2.textContent = fmt(v);
+    tr.append(td1, td2); tbody.appendChild(tr);
+    for (const [p, pv] of Object.entries(bucketPayees[b]).sort((a, z) => z[1] - a[1]).slice(0, 8)) {
+      const tri = document.createElement('tr');
+      const t1 = document.createElement('td'); t1.className = 'indent'; t1.textContent = p.length > 48 ? p.slice(0, 48) + '…' : p; t1.title = p;
+      const t2 = document.createElement('td'); t2.className = 'amount'; t2.textContent = fmt(pv);
+      tri.append(t1, t2); tbody.appendChild(tri);
+    }
+  }
+}
+
+function fillTxns(txns) {
+  const tbody = $('txnTable').querySelector('tbody'); tbody.innerHTML = '';
+  if (!txns.length) { tbody.innerHTML = '<tr><td colspan="5" class="muted">No data</td></tr>'; return; }
+  for (const t of txns) {
+    const tr = document.createElement('tr');
+    const badge = `<span class="badge">${t.bucket}</span>`;
+    tr.innerHTML = `<td>${t.date}</td><td title="${t.payee}">${t.payee.length > 42 ? t.payee.slice(0, 42) + '…' : t.payee}</td><td>${badge}</td><td>${t.account}</td><td class="amount">${fmt(t.amount)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadPlans() {
+  const res = await fetch('/api/plans');
+  if (!res.ok) throw new Error((await res.json()).error || 'Failed to load plans');
+  const plans = await res.json();
+  const sel = $('plan'); sel.innerHTML = '';
+  for (const p of plans) {
+    const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.appendChild(o);
+  }
+}
+
+async function loadReport() {
+  $('error').hidden = true; $('loading').hidden = false; $('page').hidden = true;
+  try {
+    const days = parseInt($('days').value, 10) || 30;
+    const res = await fetch(`/api/report?plan_id=${encodeURIComponent($('plan').value)}&days=${days}`);
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to load report');
+    report = await res.json();
+    currency = report.currency || '';
+    selBuckets.clear(); selAccounts.clear(); payeeQuery = ''; $('payeeSearch').value = '';
+    renderAll();
+    $('page').hidden = false;
+  } catch (e) {
+    $('error').textContent = e.message; $('error').hidden = false;
+  } finally { $('loading').hidden = true; }
+}
+
+$('refresh').onclick = loadReport;
+$('plan').onchange = loadReport;
+$('payeeSearch').oninput = (e) => { payeeQuery = e.target.value.toLowerCase(); renderAll(); };
+$('resetFilters').onclick = () => { selBuckets.clear(); selAccounts.clear(); payeeQuery = ''; $('payeeSearch').value = ''; renderAll(); };
+
+(async () => {
+  try { await loadPlans(); await loadReport(); }
+  catch (e) { $('error').textContent = e.message; $('error').hidden = false; }
+})();
+</script>
+</body>
+</html>
