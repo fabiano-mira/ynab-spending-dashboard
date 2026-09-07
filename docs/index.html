@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YNAB Spending Dashboard — docs</title>
+<meta name="description" content="A personal, self-hosted spending dashboard for YNAB — charts, a rule-based spending advisor, raw transaction export, and a daily email digest.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💸</text></svg>">
+</head>
+<body>
+
+<a class="skip" href="#overview">Skip to content</a>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Documentation only — no live app here</p>
+    <h1>YNAB Spending Dashboard</h1>
+    <p class="tagline">
+      A personal, self-hosted spending dashboard for <strong>YNAB</strong> — charts, a rule-based
+      spending advisor, raw transaction export, and a daily email digest. Runs as a single small
+      Docker container with zero npm dependencies.
+    </p>
+    <div class="cta">
+      <a class="btn" href="#overview">Read the docs</a>
+    </div>
+  </div>
+</header>
+
+<nav class="nav">
+  <div class="wrap">
+    <a href="#overview">Overview</a>
+    <a href="#features">Features</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#setup">Setup</a>
+    <a href="#security">Security</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<section id="overview">
+  <h2>Overview</h2>
+  <div class="note">
+    This page documents the project for reference only. The dashboard itself is a private Docker
+    service that runs on a trusted home network and is <strong>never</strong> deployed publicly —
+    there is no live app, demo, or API behind this page.
+  </div>
+  <p>
+    The app talks directly to the <a href="https://api.ynab.com/">YNAB API</a> using a
+    <a href="https://api.ynab.com/#personal-access-tokens">Personal Access Token</a> (not OAuth),
+    reads and writes nothing outside your own budget, and keeps all configuration in a local,
+    gitignored <code>.env</code> file.
+  </p>
+</section>
+
+<section id="features">
+  <h2>Features</h2>
+  <div class="cards">
+    <article class="card">
+      <h3>Dashboard</h3>
+      <p>
+        Spending report over a configurable window (default 30 days): total spent, average per
+        day, spend broken into rule-based buckets, daily/weekly series, top categories and payees.
+      </p>
+    </article>
+    <article class="card">
+      <h3>Charts</h3>
+      <p>Visualizes the same report data for a quicker read on trends.</p>
+    </article>
+    <article class="card">
+      <h3>Advisor</h3>
+      <p>Surfaces spending patterns worth a second look.</p>
+    </article>
+    <article class="card">
+      <h3>Raw export</h3>
+      <p>Every transaction, unfiltered, as JSON or an Excel-friendly CSV download.</p>
+    </article>
+    <article class="card">
+      <h3>Daily email digest</h3>
+      <p>
+        When SMTP is configured, a scheduled job emails a daily summary: yesterday's and
+        last-7-days spend, top payees, spend by bucket, categories over budget, and subscriptions
+        due in the next 3 days — sent via a minimal built-in SMTP client, no mail library.
+      </p>
+    </article>
+    <article class="card">
+      <h3>Auto-categorizer</h3>
+      <p>
+        A standalone script that auto-categorizes uncategorized transactions using the same
+        payee rules, with a <code>--dry-run</code> preview mode.
+      </p>
+    </article>
+  </div>
+  <p>
+    Transfers, balance adjustments, and credit-card/loan payments are automatically excluded from
+    spend totals so they aren't double-counted.
+  </p>
+</section>
+
+<section id="architecture">
+  <h2>Architecture</h2>
+  <p>Everything runs in one container, orchestrated by Docker Compose:</p>
+  <div class="diagram">
+    <pre class="mermaid">
+flowchart LR
+  Env[".env<br/>YNAB_ACCESS_TOKEN, SMTP_*"] --> Server
+  subgraph Container["ynab-report container"]
+    Server["server.cjs<br/>HTTP server + report engine"]
+    Mailer["mailer.cjs<br/>builds + sends digest over raw SMTP"]
+    Scheduler["scheduler.cjs<br/>triggers mailer.cjs once daily"]
+    Index["index.cjs<br/>entrypoint: starts server + scheduler"]
+    Pages["*.html<br/>index / charts / advisor / raw"]
+  end
+  Index --> Server
+  Index --> Scheduler
+  Scheduler --> Mailer
+  Server --> Pages
+  Server -- "Bearer token" --> YNAB["YNAB API"]
+  Mailer -- "Bearer token" --> YNAB
+  Mailer -- "SMTP" --> Inbox["Your inbox"]
+    </pre>
+  </div>
+  <dl class="deflist">
+    <dt>server.cjs</dt>
+    <dd>HTTP server: serves the UI pages plus <code>/api/report</code>, <code>/api/raw</code>, <code>/api/export.csv</code>.</dd>
+    <dt>mailer.cjs</dt>
+    <dd>Builds and sends the daily digest email over a hand-rolled SMTP client (STARTTLS + AUTH LOGIN).</dd>
+    <dt>scheduler.cjs</dt>
+    <dd>Schedules <code>mailer.cjs</code> to run once daily at <code>MAIL_HOUR</code>.</dd>
+    <dt>index.cjs</dt>
+    <dd>Docker entrypoint — starts the server and scheduler together.</dd>
+  </dl>
+</section>
+
+<section id="setup">
+  <h2>Setup</h2>
+  <p>Documented here for reference — this requires your own YNAB personal access token and runs on your own network.</p>
+  <pre class="code"><code># .env in the repo root
+YNAB_ACCESS_TOKEN=your-ynab-personal-access-token
+
+# optional — enables the daily email digest
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=you@example.com
+SMTP_PASS=your-smtp-password
+MAIL_TO=you@example.com
+MAIL_HOUR=7</code></pre>
+  <pre class="code"><code>docker compose up -d</code></pre>
+  <p>
+    Serves the dashboard at <code>http://&lt;docker-host&gt;:3333/</code> (maps to container port
+    3000). If SMTP variables aren't set, the daily digest is simply disabled.
+  </p>
+</section>
+
+<section id="security">
+  <h2>Security</h2>
+  <ul class="gotchas">
+    <li><strong>The access token grants full read/write access</strong> to your YNAB budget. It only ever lives in a local, gitignored <code>.env</code> file.</li>
+    <li><strong>The server has no authentication</strong> of its own, so the container is only ever exposed on a trusted home network — never to the public internet.</li>
+    <li><strong>This page is documentation only.</strong> No secrets, tokens, or live endpoints are included here or reachable from it.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <div class="author">
+      <p class="author-name">Fabiano Altheman Mira</p>
+      <p class="author-bio">
+        Building small tools to understand my own spending.
+      </p>
+      <p class="author-links">
+        <a href="https://www.linkedin.com/in/fabiano-mira/">LinkedIn</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://github.com/fabiano-mira">GitHub</a>
+      </p>
+    </div>
+    <p>ynab-spending-dashboard · private repository, documentation published for reference only</p>
+  </div>
+</footer>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background: '#12161f',
+      primaryColor: '#1b2130',
+      primaryTextColor: '#e6ebf5',
+      primaryBorderColor: '#2f9e6e',
+      lineColor: '#6b7793',
+      fontFamily: 'ui-sans-serif, -apple-system, system-ui, sans-serif'
+    }
+  });
+</script>
+
+</body>
+</html>
