@@ -7,7 +7,11 @@
     <div class="row">
       <div class="col-12 col-md">
         <small class="text-muted">MADE BY</small>
-        <h5><a href="#">You!</a></h5>
+        <h5><a href="https://www.linkedin.com/in/fabiano-mira/">Fabiano Altheman Mira</a></h5>
+        <p class="text-muted">
+          Building small tools to understand my own spending — connect on
+          <a href="https://www.linkedin.com/in/fabiano-mira/">LinkedIn</a>.
+        </p>
       </div>
     </div>
   </footer>
